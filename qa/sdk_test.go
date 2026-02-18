@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	incidentio "github.com/strongdm/go-incidentio"
+	incidentio "github.com/strongdm/web/pkg/incidentio/sdk"
 )
 
 // ============================================================================
