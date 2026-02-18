@@ -108,13 +108,13 @@ These issues are in `pkg/incidentio/` files in PR #15258. Verified via diff revi
 | 5 | **GQL-003**: Sync runs synchronously | **FIXED** | Uses `startIncidentIoSync` (async) |
 | 6 | **GQL-001**: Test swallows error details | **FIXED** | Returns `ErrorMessage` field |
 | 7 | **CLIENT-003**: Inconsistent error handling | **PARTIALLY FIXED** | Both continue on error, but different strategies (empty set vs skip) |
+| 8 | **SYNC-008**: ListAllOnCallUsers logging on skip | **FIXED** | `log.Warn()` now added when schedule fails during on-call aggregation |
 
 #### NOT FIXED — Still Present
 
 | # | Issue | Severity | File | Description |
 |---|-------|----------|------|-------------|
-| 1 | **SYNC-008**: ListAllOnCallUsers no logging on skip | **MEDIUM** | `pkg/incidentio/client.go:413-418` | Comment exists but no `log.Warn()` call when schedule fails. Silent skip. |
-| 2 | **SYNC-001**: Stale metadata on refresh failure | **LOW** | `pkg/incidentio/sync.go:93-97` | Errors logged but sync continues with potentially stale schedule names |
+| 1 | **SYNC-001**: Stale metadata on refresh failure | **LOW** | `pkg/incidentio/sync.go:93-97` | Errors logged but sync continues with potentially stale schedule names |
 | 3 | **SYNC-002**: Deleted schedule cleanup errors | **LOW** | `pkg/incidentio/sync.go:99-103` | Errors logged but deleted schedules may accumulate |
 | 4 | **SEC-001**: API key cached 23 hours after revocation | **LOW** | `pkg/incidentio/apikey.go:24` | No invalidation on 401 from API calls |
 | 5 | **CONFIG-002**: Non-atomic schedule removal | **LOW** | `pkg/incidentio/config.go:226-237` | Metadata removed, then sync runs separately |
@@ -129,8 +129,8 @@ These issues are in `pkg/incidentio/` files in PR #15258. Verified via diff revi
 |----------|-------------|-------------|
 | **CRITICAL** | 6 | **0** |
 | **HIGH** | 9 | **0** (1 partially fixed) |
-| **MEDIUM** | 7 | **1** remaining |
-| **LOW** | 20+ | **5** remaining (informational) |
+| **MEDIUM** | 7 | **0** |
+| **LOW** | 20+ | **6** remaining (informational) |
 | **SDK coverage** | 93.3% | **98.4%** |
 | **Tests passing** | 62/62 | **112/112** |
 
@@ -145,16 +145,6 @@ These issues are in `pkg/incidentio/` files in PR #15258. Verified via diff revi
 | `TestEDGE_SpecialCharsInScheduleID/question` | `FINDING: Special chars leaked into query string` | No query string leak (URL encoded) |
 | `TestEDGE_SpecialCharsInScheduleID/forward_slash` | Path: `/v2/schedules/sched/001` | Path: `/v2/schedules/sched%2F001` (escaped) |
 
-### One Fix to Still Make
+### Deploy Readiness
 
-**SYNC-008** — Add logging to `ListAllOnCallUsers` when a schedule fails:
-```go
-// pkg/incidentio/client.go, in ListAllOnCallUsers():
-if err != nil {
-    log.Warn(ctx, "[IncidentIO] failed to fetch on-call for schedule, skipping",
-        log.String("schedule_id", schedule.ID), log.Err(err))
-    continue
-}
-```
-
-This is the only actionable item remaining. Everything else is LOW/informational.
+**All CRITICAL, HIGH, and MEDIUM issues are fixed.** Only LOW/informational items remain — none require action before deploy. Ship it.
