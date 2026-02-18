@@ -2,8 +2,47 @@
 
 **Generated:** 2026-02-18
 **PR Under Test:** strongdm/web#15258 (feature/incidentio-integration)
-**SDK Coverage:** 89.7% (down from 93.3% due to new retry/pagination code paths)
-**Tests:** 62 passed, 0 failed
+**SDK Coverage:** 98.4% (112 tests, all passing)
+**Tests:** 112 passed, 0 failed
+
+---
+
+## Test Suite Breakdown
+
+| Suite | Tests | Purpose |
+|-------|-------|---------|
+| SDK core (`sdk_test.go`) | 32 | Auth, schedules, entries, users, errors, security |
+| Edge cases (`edge_cases_test.go`) | 30 | Adversarial servers, concurrency, data boundaries, pagination |
+| Functional E2E (`functional_test.go`) | 20 | Real user workflows: create, sync, rotate, disconnect, scale |
+| Coverage targets (`coverage_gap_test.go`) | 22 | Decode errors, pagination params, retry paths, error wrapping |
+| Coverage final (`coverage_final_test.go`) | 8 | Retry exhaustion, context cancellation, URL errors, truncation |
+| **Total** | **112** | |
+
+## SDK Coverage: 98.4%
+
+| Function | Coverage |
+|----------|----------|
+| `NewClient` | 100.0% |
+| `WithBaseURL` | 100.0% |
+| `WithHTTPClient` | 100.0% |
+| `WithUserAgent` | 100.0% |
+| `prepRequest` | 100.0% |
+| `do` | 92.9% |
+| `get` | 100.0% |
+| `decodeJSON` | 100.0% |
+| `Error` | 100.0% |
+| `IsNotFound` | 100.0% |
+| `IsUnauthorized` | 100.0% |
+| `IsRateLimited` | 100.0% |
+| `newAPIError` | 100.0% |
+| `ListSchedulesWithContext` | 100.0% |
+| `GetScheduleWithContext` | 100.0% |
+| `ListScheduleEntriesWithContext` | 100.0% |
+| `GetUserWithContext` | 100.0% |
+| `ListUsersWithContext` | 100.0% |
+| **Total** | **98.4%** |
+
+**Uncovered (1.6%):** `do()` line 119-120 — `io.ReadAll` error on `LimitReader`. Requires a TCP connection to break mid-read, which cannot be reliably triggered in unit tests.
 
 ---
 
@@ -24,36 +63,33 @@
 | # | Issue | Status | Test Evidence |
 |---|-------|--------|---------------|
 | 6 | **EDGE-REDIRECT**: Auth header leaked on redirects | **FIXED** | `CheckRedirect: http.ErrUseLastResponse` — `TestEDGE_HTTP301Redirect` now shows SDK blocks redirect with `301` error instead of following |
-| 7 | **EDGE-429**: No retry on rate limit | **FIXED** | `TestEDGE_HTTP429RateLimit` now shows `SDK succeeded` after server returned 429 then 200 — retry logic working with 2s wait |
-| 8 | **EDGE-HTML**: HTML in error messages | **PARTIALLY FIXED** | `TestEDGE_HTMLErrorResponse` still shows full HTML in error. Truncation may only apply to non-JSON bodies over 200 chars — this test body is 87 chars |
+| 7 | **EDGE-429**: No retry on rate limit | **FIXED** | `TestEDGE_HTTP429RateLimit` now shows `SDK succeeded` after server returned 429 then 200 — retry logic working |
+| 8 | **EDGE-HTML**: HTML in error messages | **PARTIALLY FIXED** | Truncation applies to non-JSON bodies over 200 chars. Confirmed by `TestCOV_FINAL_LongNonJSONErrorTruncated`. Short HTML bodies (<200 chars) pass through untruncated. |
+
+### Retry Logic — Fully Tested
+
+| # | Test | Scenario | Result |
+|---|------|----------|--------|
+| 1 | `TestCOV_DoMaxRetriesExhausted` | Server always returns 429 | 4 attempts, then error |
+| 2 | `TestCOV_DoContextCancelledDuringRetryWait` | 429 with 60s Retry-After, 200ms context | Cancelled in 200ms |
+| 3 | `TestCOV_DoRetryAfterHeaderParsed` | 429 with `Retry-After: 1` | Retried after 1s, succeeded |
+| 4 | `TestCOV_DoRetryAfterHeaderNonNumeric` | 429 with HTTP-date Retry-After | Falls back to 5s default |
+| 5 | `TestCOV_DoRetryAfterNoHeader` | 429 without Retry-After | Uses 5s default |
+| 6 | `TestCOV_FINAL_AllAttemptsReturn429` | All 4 attempts get 429 | Max retries exhausted error |
 
 ---
 
 ## Remaining Issues
 
-### SDK Layer (89.7% coverage)
+### SDK Layer (98.4% coverage) — LOW / Informational
 
-#### LOW — Informational (no action needed)
-
-| # | Finding | File | Notes |
-|---|---------|------|-------|
-| 1 | SDK accepts empty JSON `{}` without error | `client.go` | `TestEDGE_EmptyJSONObject` — returns nil schedules. By design. |
-| 2 | SDK returns duplicate user entries | `schedule_entry.go` | `TestEDGE_DuplicateUserIDsInEntries` — dedup happens in integration layer |
-| 3 | SDK accepts entries with empty user.id | `schedule_entry.go` | `TestEDGE_EmptyUserIDInEntry` — filtered in integration layer |
-| 4 | `FieldErrors` not accessible via `errors.As()` | `errors.go` | `TestEDGE_APIErrorWithFieldErrors` — APIError wrapped by `fmt.Errorf` |
-| 5 | `io.ReadAll` buffers entire response in memory | `client.go` | Now capped at 10MB, acceptable |
-| 6 | No retry on non-429 transient errors (500, 503) | `client.go` | `TestEDGE_ServerReturns200ThenErrors` — by design, only 429 retried |
-
-#### MEDIUM — Coverage Gaps
-
-| # | Function | Coverage | Uncovered Path |
-|---|----------|----------|----------------|
-| 1 | `do()` | 85.7% | `maxRetries` exhausted path (line 145), `Retry-After` parsing, `ctx.Done()` during retry wait |
-| 2 | `GetScheduleWithContext()` | 88.9% | Empty ID validation path (covered by edge test, but coverage tool misattributes) |
-| 3 | `ListScheduleEntriesWithContext()` | 87.5% | Some param validation paths |
-| 4 | `GetUserWithContext()` | 77.8% | Empty ID + decode error paths |
-| 5 | `ListUsersWithContext()` | 75.0% | Pagination + decode error paths |
-| 6 | `newAPIError()` | 93.3% | Edge case in JSON parse fallback |
+| # | Finding | Notes |
+|---|---------|-------|
+| 1 | SDK accepts empty JSON `{}` without error | By design — returns nil slice |
+| 2 | SDK returns duplicate user entries | Dedup happens in integration layer |
+| 3 | SDK accepts entries with empty user.id | Filtered in integration layer |
+| 4 | `FieldErrors` not accessible via `errors.As()` | APIError wrapped by `fmt.Errorf` |
+| 5 | No retry on non-429 transient errors (500, 503) | By design — only 429 retried |
 
 ---
 
@@ -93,10 +129,10 @@ These issues are in `pkg/incidentio/` files in PR #15258. Verified via diff revi
 |----------|-------------|-------------|
 | **CRITICAL** | 6 | **0** |
 | **HIGH** | 9 | **0** (1 partially fixed) |
-| **MEDIUM** | 7 | **2** remaining |
+| **MEDIUM** | 7 | **1** remaining |
 | **LOW** | 20+ | **5** remaining (informational) |
-| **SDK coverage** | 93.3% | **89.7%** (new code paths need tests) |
-| **Tests passing** | 62/62 | **62/62** |
+| **SDK coverage** | 93.3% | **98.4%** |
+| **Tests passing** | 62/62 | **112/112** |
 
 ### What Changed in Test Results
 
